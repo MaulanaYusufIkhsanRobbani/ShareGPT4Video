@@ -141,18 +141,32 @@ def single_test(model, processor, tokenizer, vid_path, qs, pre_query_prompt=None
     return llm_response
 
 
+# Function to process a single video
+def process_video(model, processor, tokenizer, video_path, query, pre_query_prompt, num_frames, conv_mode):
+    outputs = single_test(
+        model,
+        processor,
+        tokenizer,
+        video_path,
+        qs=query,
+        pre_query_prompt=pre_query_prompt,
+        num_frames=num_frames,
+        conv_mode=conv_mode
+    )
+    return outputs
+
+# Main function
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-path", type=str,
-                        default="Lin-Chen/sharegpt4video-8b")
-    parser.add_argument("--video", type=str, default="examples/yoga.mp4")
+    parser.add_argument("--model-path", type=str, default="Lin-Chen/sharegpt4video-8b")
+    parser.add_argument("--video-dir", type=str, required=True, help="Directory containing the videos")
+    parser.add_argument("--query", type=str, default="Describe this video in detail.")
     parser.add_argument("--conv-mode", type=str, default="llava_llama_3")
-    parser.add_argument("--query", type=str,
-                        default="Describe this video in detail.")
+    parser.add_argument("--num-frames", type=int, default=16)
+    parser.add_argument("--output-dir", type=str, required=True, help="Directory to save captions")
     args = parser.parse_args()
-    num_frames = 16
-    pre_query_prompt = "The provided image arranges keyframes from a video in a grid view, keyframes are separated with white bands. Answer concisely with overall content and context of the video, highlighting any significant events, characters, or objects that appear throughout the frames."
 
+    # Initialize model
     disable_torch_init()
     model_path = os.path.expanduser(args.model_path)
     model_name = get_model_name_from_path(model_path)
@@ -160,11 +174,27 @@ if __name__ == "__main__":
         model_path, None, model_name, device_map='cpu')
     model = model.cuda().eval()
 
-    outputs = single_test(model,
-                          processor,
-                          tokenizer,
-                          args.video,
-                          qs=args.query,
-                          pre_query_prompt=pre_query_prompt,
-                          num_frames=num_frames,
-                          conv_mode=args.conv_mode)
+    # Pre-query prompt
+    pre_query_prompt = "The provided image arranges keyframes from a video in a grid view, keyframes are separated with white bands. Answer concisely with overall content and context of the video, highlighting any significant events, characters, or objects that appear throughout the frames."
+
+    # Get list of video files in the provided directory
+    video_dir = args.video_dir
+    output_dir = args.output_dir
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Process each video
+    for video_file in os.listdir(video_dir):
+        if video_file.endswith(('.mp4', '.avi', '.mkv', '.mov')):  # Add other formats if needed
+            video_path = os.path.join(video_dir, video_file)
+            print(f"Processing video: {video_path}")
+
+            # Process the video and get captions
+            captions = process_video(
+                model, processor, tokenizer, video_path, args.query, pre_query_prompt, args.num_frames, args.conv_mode
+            )
+
+            # Save captions to file
+            output_file = os.path.join(output_dir, f"{os.path.splitext(video_file)[0]}_caption.txt")
+            with open(output_file, 'w') as f:
+                f.write(captions)
+            print(f"Captions saved to: {output_file}")
